@@ -1,2 +1,1 @@
-# solana-safari-the-token-hunt
-Solana Safari: The Token Hunt
+# Solana Safari - The Token Hunt
