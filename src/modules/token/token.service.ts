@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { SolanaService } from '../solana/solana.service';
 import { MetaplexService } from '../metaplex/metaplex.service';
-import { CoinGeckoService } from '../../services/coingecko/coingecko.service';
+import { CoinGeckoService } from '../coingecko/coingecko.service';
 
 @Injectable()
 export class TokenService {

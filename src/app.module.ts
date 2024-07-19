@@ -3,9 +3,16 @@ import { ConfigModule } from './config/config.module';
 import { TokenModule } from './modules/token/token.module';
 import { SolanaModule } from './modules/solana/solana.module';
 import { MetaplexModule } from './modules/metaplex/metaplex.module';
+import { CoinGeckoModule } from './modules/coingecko/coingecko.module';
 
 @Module({
-  imports: [ConfigModule, TokenModule, SolanaModule, MetaplexModule],
+  imports: [
+    ConfigModule,
+    TokenModule,
+    SolanaModule,
+    MetaplexModule,
+    CoinGeckoModule,
+  ],
   controllers: [],
   providers: [],
 })
