@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from './config/config.module';
-import { TokenModule } from './token/token.module';
+import { TokenModule } from './modules/token/token.module';
+import { SolanaModule } from './modules/solana/solana.module';
 
 @Module({
-  imports: [ConfigModule, TokenModule],
+  imports: [ConfigModule, TokenModule, SolanaModule],
   controllers: [],
   providers: [],
 })
