@@ -1,15 +1,22 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MetaplexService } from './metaplex.service';
 import { SolanaModule } from '../solana/solana.module';
+import { BullModule } from '@nestjs/bullmq';
 import {
   METAPLEX_INSTANCE,
   SOLANA_CONNECTION,
 } from '../../shared/constants/constants';
 import { Metaplex } from '@metaplex-foundation/js';
 import { Connection } from '@solana/web3.js';
+import { MetaplexQueueProcessor } from '../queue/processors/metaplex-queue.processor';
 
 @Module({
-  imports: [forwardRef(() => SolanaModule)],
+  imports: [
+    forwardRef(() => SolanaModule),
+    BullModule.registerQueue({
+      name: 'metaplexQueue',
+    }),
+  ],
   providers: [
     MetaplexService,
     {
@@ -19,6 +26,7 @@ import { Connection } from '@solana/web3.js';
       },
       inject: [SOLANA_CONNECTION],
     },
+    MetaplexQueueProcessor,
   ],
   exports: [MetaplexService, METAPLEX_INSTANCE],
 })

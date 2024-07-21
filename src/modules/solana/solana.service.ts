@@ -5,7 +5,6 @@ import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { ParsedTokenAccount } from './interfaces/parsed-token-account.interface';
 import { SolanaRpcError, SolanaParseError } from './errors/solana-error';
 import { SOLANA_CONNECTION } from '../../shared/constants/constants';
-import { MetaplexService } from '../metaplex/metaplex.service';
 
 @Injectable()
 export class SolanaService {
@@ -14,7 +13,6 @@ export class SolanaService {
 
   constructor(
     @Inject(SOLANA_CONNECTION) private readonly connection: Connection,
-    private readonly metaplexService: MetaplexService,
   ) {
     this.tokenProgramId = TOKEN_PROGRAM_ID;
   }
@@ -83,37 +81,6 @@ export class SolanaService {
       );
       throw new SolanaRpcError(error.message, publicKey);
     }
-  }
-
-  async getTokensWithMetadata(publicKey: string): Promise<any> {
-    const tokenAccounts = await this.getTokenAccountsByOwner(publicKey);
-
-    const mintAddresses = tokenAccounts.map((token) => token.mintAddress);
-    const tokenMetadata =
-      await this.metaplexService.getTokenMetadata(mintAddresses);
-
-    const tokens = tokenAccounts.map((token) => {
-      const metadata = tokenMetadata.find(
-        (meta) => meta.mint === token.mintAddress,
-      );
-
-      return {
-        mintAddress: token.mintAddress,
-        balance: token.amount,
-        decimals: token.decimals,
-        ...metadata,
-      };
-    });
-
-    const totalValue = tokens.reduce(
-      (acc, token) => acc + parseFloat(token.balance),
-      0,
-    );
-
-    return {
-      tokens,
-      totalValue: totalValue,
-    };
   }
 
   private parseTokenAccount(info: any): ParsedTokenAccount {
