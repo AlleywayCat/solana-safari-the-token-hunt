@@ -55,14 +55,7 @@ export class CoinGeckoService {
 
       this.logger.debug(`Token IDs: ${tokenIds.join(', ')}`);
 
-      // Add logging before creating the job
-      this.logger.debug(
-        `Creating job with tokenIds: ${JSON.stringify(tokenIds)}`,
-      );
-
       const job = await this.coingeckoQueue.add('fetch-prices', { tokenIds });
-
-      this.logger.debug(`Job created with data: ${JSON.stringify(job.data)}`);
 
       const tokenPrices = await job.waitUntilFinished(this.queueEvents);
 

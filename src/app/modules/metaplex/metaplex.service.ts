@@ -1,4 +1,3 @@
-// metaplex.service.ts
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import {
   Metaplex,
@@ -6,7 +5,7 @@ import {
   Metadata,
   chunk,
 } from '@metaplex-foundation/js';
-import { PublicKey, Connection } from '@solana/web3.js';
+import { PublicKey } from '@solana/web3.js';
 import { METAPLEX_INSTANCE } from '../../shared/constants/constants';
 import { TokenMetadata } from './interfaces/token-metadata.interface';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
@@ -38,7 +37,7 @@ export class MetaplexService {
       const mintBatches = chunk(mints, this.BATCH_SIZE);
 
       const tokensWithMetadata = await Promise.all(
-        mintBatches.map((batch) => this.getCachedMetadata(batch)),
+        mintBatches.map((batch) => this.getMetadataForBatch(batch)),
       );
 
       const flattenedTokens = tokensWithMetadata.flat();
@@ -57,12 +56,12 @@ export class MetaplexService {
     }
   }
 
-  private async getCachedMetadata(batch: string[]): Promise<TokenMetadata[]> {
+  private async getMetadataForBatch(mints: string[]): Promise<TokenMetadata[]> {
     const cachedMetadata: TokenMetadata[] = [];
     const uncachedMints: string[] = [];
 
     await Promise.all(
-      batch.map(async (mint) => {
+      mints.map(async (mint) => {
         const cachedData = await this.cacheManager.get<TokenMetadata>(mint);
         if (cachedData) {
           cachedMetadata.push(cachedData);
@@ -73,25 +72,28 @@ export class MetaplexService {
     );
 
     if (uncachedMints.length > 0) {
-      try {
-        const job = await this.metadataQueue.add('process-metadata', {
-          mints: uncachedMints,
-        });
-
-        const freshMetadata = await job.waitUntilFinished(this.queueEvents);
-
-        await this.cacheMetadata(freshMetadata);
-        cachedMetadata.push(...freshMetadata);
-      } catch (error) {
-        this.logger.error(
-          `Failed to process metadata for mints: ${uncachedMints.join(', ')}`,
-          error.stack,
-        );
-        throw error;
-      }
+      const freshMetadata = await this.processUncachedMints(uncachedMints);
+      await this.cacheMetadata(freshMetadata);
+      cachedMetadata.push(...freshMetadata);
     }
 
     return cachedMetadata;
+  }
+
+  private async processUncachedMints(
+    mints: string[],
+  ): Promise<TokenMetadata[]> {
+    try {
+      const job = await this.metadataQueue.add('process-metadata', { mints });
+      const freshMetadata = await job.waitUntilFinished(this.queueEvents);
+      return freshMetadata;
+    } catch (error) {
+      this.logger.error(
+        `Failed to process metadata for mints: ${mints.join(', ')}`,
+        error.stack,
+      );
+      throw error;
+    }
   }
 
   private async cacheMetadata(metadata: TokenMetadata[]): Promise<void> {
@@ -124,38 +126,35 @@ export class MetaplexService {
     }
   }
 
-  async fetchMetadataBatch(mints: string[]): Promise<TokenMetadata[]> {
+  private async fetchMetadataBatch(mints: string[]): Promise<TokenMetadata[]> {
     try {
       const metadatas = await this.metaplex
         .nfts()
         .findAllByMintList({ mints: mints.map((mint) => new PublicKey(mint)) });
 
-      const tokensWithMetadata = (
-        await Promise.all(
-          metadatas.map(async (metadata) => {
-            if (metadata?.model === 'metadata') {
-              const tokenWithMetadata = (await this.metaplex
-                .nfts()
-                .load({ metadata })) as NftWithToken | Metadata;
+      const tokensWithMetadata = await Promise.all(
+        metadatas.map(async (metadata) => {
+          if (metadata?.model === 'metadata') {
+            const tokenWithMetadata = (await this.metaplex
+              .nfts()
+              .load({ metadata })) as NftWithToken | Metadata;
 
-              return {
-                mint: tokenWithMetadata.address.toBase58(),
-                name:
-                  tokenWithMetadata?.json?.name ?? tokenWithMetadata.name ?? '',
-                symbol:
-                  tokenWithMetadata?.json?.symbol ??
-                  tokenWithMetadata.symbol ??
-                  '',
-                image: tokenWithMetadata?.json?.image ?? null,
-              };
-            }
+            return {
+              mint: tokenWithMetadata.address.toBase58(),
+              name:
+                tokenWithMetadata?.json?.name ?? tokenWithMetadata.name ?? '',
+              symbol:
+                tokenWithMetadata?.json?.symbol ??
+                tokenWithMetadata.symbol ??
+                '',
+              image: tokenWithMetadata?.json?.image ?? null,
+            };
+          }
+          return null;
+        }),
+      );
 
-            return null;
-          }),
-        )
-      ).filter((token) => token !== null);
-
-      return tokensWithMetadata;
+      return tokensWithMetadata.filter((token) => token !== null);
     } catch (error) {
       this.logger.error(
         `Failed to fetch metadata for batch: ${mints.join(', ')}`,

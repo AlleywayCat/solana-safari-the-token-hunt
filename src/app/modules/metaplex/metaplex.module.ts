@@ -8,7 +8,8 @@ import {
 } from '../../shared/constants/constants';
 import { Metaplex } from '@metaplex-foundation/js';
 import { Connection } from '@solana/web3.js';
-import { MetaplexQueueProcessor } from '../queue/processors/metaplex-queue.processor';
+import { MetaplexQueueProcessor } from '../../../worker/queue/processors/metaplex-queue.processor';
+import { CacheModule } from '@nestjs/cache-manager';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { MetaplexQueueProcessor } from '../queue/processors/metaplex-queue.proce
     BullModule.registerQueue({
       name: 'metaplexQueue',
     }),
+    CacheModule,
   ],
   providers: [
     MetaplexService,
