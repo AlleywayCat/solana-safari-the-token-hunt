@@ -15,7 +15,7 @@ import { Connection } from '@solana/web3.js';
     {
       provide: METAPLEX_INSTANCE,
       useFactory: async (connection: Connection): Promise<Metaplex> => {
-        return new Metaplex(connection);
+        return new Metaplex(connection, { cluster: 'mainnet-beta' });
       },
       inject: [SOLANA_CONNECTION],
     },

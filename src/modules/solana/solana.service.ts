@@ -1,11 +1,11 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
-import { SolanaRpcError } from './errors/solana-error';
 import { SOLANA_CONNECTION } from '../../shared/constants/constants';
-import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { ParsedTokenAccount } from './interfaces/parsed-token-account.interface';
+import { SolanaRpcError } from './errors/solana-error';
 
 @Injectable()
 export class SolanaService {
@@ -18,19 +18,10 @@ export class SolanaService {
   ) {}
 
   async getSolBalance(publicKey: string): Promise<number> {
-    const cacheKey = `solBalance-${publicKey}`;
-    const cachedBalance = await this.cacheManager.get<number>(cacheKey);
-    if (cachedBalance) {
-      this.logger.log(`Cache hit for SOL balance of ${publicKey}`);
-      return cachedBalance;
-    }
-
     try {
       const pubKey = new PublicKey(publicKey);
-      const balance = await this.connection.getBalance(pubKey);
+      const balance = await this.connection.getBalance(pubKey, 'confirmed');
       const solBalance = balance / LAMPORTS_PER_SOL; // Convert lamports to SOL
-
-      await this.cacheManager.set(cacheKey, solBalance, this.CACHE_TTL);
 
       this.logger.log(
         `Fetched SOL balance for ${publicKey}: ${solBalance} SOL`,
@@ -45,14 +36,35 @@ export class SolanaService {
     }
   }
 
+  private async getCachedData<T>(cacheKey: string): Promise<T | null> {
+    try {
+      const cachedData = await this.cacheManager.get<T>(cacheKey);
+      if (cachedData) {
+        this.logger.log(`Cache hit for ${cacheKey}`);
+        return cachedData;
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to get cache for ${cacheKey}: ${error.message}`);
+    }
+    return null;
+  }
+
+  private async setCachedData<T>(cacheKey: string, data: T): Promise<void> {
+    try {
+      await this.cacheManager.set(cacheKey, data, this.CACHE_TTL);
+      this.logger.log(`Cache set for ${cacheKey}`);
+    } catch (error) {
+      this.logger.warn(`Failed to set cache for ${cacheKey}: ${error.message}`);
+    }
+  }
+
   async getTokenAccountsByOwner(
     publicKey: string,
   ): Promise<ParsedTokenAccount[]> {
     const cacheKey = `tokenAccounts-${publicKey}`;
     const cachedAccounts =
-      await this.cacheManager.get<ParsedTokenAccount[]>(cacheKey);
-    if (cachedAccounts) {
-      this.logger.log(`Cache hit for token accounts of ${publicKey}`);
+      await this.getCachedData<ParsedTokenAccount[]>(cacheKey);
+    if (cachedAccounts !== null) {
       return cachedAccounts;
     }
 
@@ -65,13 +77,16 @@ export class SolanaService {
         },
       );
 
-      const parsedAccounts = tokenAccounts.value.map((account) => ({
-        mintAddress: account.account.data.parsed.info.mint,
-        amount: account.account.data.parsed.info.tokenAmount.amount,
-        decimals: account.account.data.parsed.info.tokenAmount.decimals,
-      }));
+      const parsedAccounts = tokenAccounts.value.map((account) => {
+        const info = account.account.data.parsed.info;
+        return {
+          mintAddress: info.mint,
+          amount: info.tokenAmount.amount,
+          decimals: info.tokenAmount.decimals,
+        };
+      });
 
-      await this.cacheManager.set(cacheKey, parsedAccounts, this.CACHE_TTL);
+      await this.setCachedData(cacheKey, parsedAccounts);
 
       this.logger.log(
         `Fetched ${parsedAccounts.length} token accounts for ${publicKey}`,
@@ -79,8 +94,7 @@ export class SolanaService {
       return parsedAccounts;
     } catch (error) {
       this.logger.error(
-        `Failed to get token accounts for ${publicKey}`,
-        error.stack,
+        `Failed to get token accounts for ${publicKey}: ${error.message}`,
       );
       throw new SolanaRpcError(error.message, publicKey);
     }

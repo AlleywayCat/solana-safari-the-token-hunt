@@ -1,0 +1,34 @@
+{
+	"info": {
+		"_postman_id": "883eea5e-6c02-4ade-adf6-7ca24e1db4fb",
+		"name": "Solana Safari",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "13481049"
+	},
+	"item": [
+		{
+			"name": "GET tokens",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "localhost:3000/tokens?publicKey=ETddVJxVaLWcFfRT3TCoPty4mqrY9s32KPMZ8KFfgFg",
+					"host": [
+						"localhost"
+					],
+					"port": "3000",
+					"path": [
+						"tokens"
+					],
+					"query": [
+						{
+							"key": "publicKey",
+							"value": "ETddVJxVaLWcFfRT3TCoPty4mqrY9s32KPMZ8KFfgFg"
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

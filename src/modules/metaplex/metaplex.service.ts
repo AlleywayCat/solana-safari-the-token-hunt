@@ -1,17 +1,22 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
-import { Metaplex, Metadata, chunk } from '@metaplex-foundation/js';
+import { Metaplex, Metadata, Nft, Sft, chunk } from '@metaplex-foundation/js';
 import { PublicKey } from '@solana/web3.js';
 import { METAPLEX_INSTANCE } from '../../shared/constants/constants';
 import { TokenMetadata } from './interfaces/token-metadata.interface';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
-import { SolanaRpcError } from '../solana/errors/solana-error';
 
 @Injectable()
 export class MetaplexService {
   private readonly logger = new Logger(MetaplexService.name);
-  private readonly BATCH_SIZE = 50; // Adjust batch size for optimal performance
-  private readonly CACHE_TTL = 3600; // Cache TTL in seconds (e.g., 1 hour)
+  private readonly BATCH_SIZE = 10;
+  private readonly CACHE_TTL = 3600;
+  private readonly MAX_REQUESTS = 200;
+  private readonly TOKEN_BUCKET_INTERVAL = 60000;
+  private readonly MAX_RETRIES = 3;
+
+  private tokens = this.MAX_REQUESTS;
+  private lastRefill = Date.now();
 
   constructor(
     @Inject(METAPLEX_INSTANCE) private readonly metaplex: Metaplex,
@@ -19,19 +24,16 @@ export class MetaplexService {
   ) {}
 
   async getTokenMetadata(mints: string[]): Promise<TokenMetadata[]> {
-    const startTime = Date.now();
     this.logger.log(`Starting to fetch metadata for ${mints.length} mints`);
 
+    const start = Date.now();
     try {
       const mintBatches = chunk(mints, this.BATCH_SIZE);
-      const tokensWithMetadata = await Promise.all(
-        mintBatches.map((batch) => this.getMetadataForBatch(batch)),
-      );
+      const tokensWithMetadata = await this.processInParallel(mintBatches);
 
       const flattenedTokens = tokensWithMetadata.flat();
-
       this.logger.log(
-        `Successfully fetched metadata for ${flattenedTokens.length} mints in ${Date.now() - startTime} ms`,
+        `Successfully fetched metadata for ${flattenedTokens.length} mints in ${Date.now() - start} ms`,
       );
 
       return flattenedTokens;
@@ -40,104 +42,192 @@ export class MetaplexService {
         `Failed to fetch metadata for mints: ${mints.join(', ')}`,
         error.stack,
       );
-      throw new SolanaRpcError(error.message, mints.join(', '));
+      throw new Error(
+        `Failed to fetch metadata for mints: ${mints.join(', ')}`,
+      );
     }
+  }
+
+  private async processInParallel(
+    batches: string[][],
+  ): Promise<TokenMetadata[][]> {
+    const result: TokenMetadata[][] = await Promise.all(
+      batches.map(async (batch) => {
+        await this.consumeToken();
+        return this.getMetadataForBatch(batch);
+      }),
+    );
+    return result;
   }
 
   private async getMetadataForBatch(mints: string[]): Promise<TokenMetadata[]> {
-    const cachedMetadata: TokenMetadata[] = [];
-    const uncachedMints: string[] = [];
-
-    await Promise.all(
-      mints.map(async (mint) => {
-        const cachedData = await this.cacheManager.get<TokenMetadata>(mint);
-        if (cachedData) {
-          cachedMetadata.push(cachedData);
-        } else {
-          uncachedMints.push(mint);
-        }
-      }),
-    );
+    const cachedMetadata = await this.getCachedMetadata(mints);
+    const uncachedMints = mints.filter((mint, idx) => !cachedMetadata[idx]);
 
     if (uncachedMints.length > 0) {
-      const freshMetadata = await this.fetchMetadataBatch(uncachedMints);
+      const freshMetadata =
+        await this.fetchMetadataBatchWithRetries(uncachedMints);
       await this.cacheMetadata(freshMetadata);
-      cachedMetadata.push(...freshMetadata);
+      uncachedMints.forEach(
+        (mint, idx) =>
+          (cachedMetadata[mints.indexOf(mint)] = freshMetadata[idx]),
+      );
     }
 
-    return cachedMetadata;
+    return cachedMetadata.filter(
+      (metadata) => metadata !== undefined,
+    ) as TokenMetadata[];
+  }
+
+  private async getCachedMetadata(
+    mints: string[],
+  ): Promise<(TokenMetadata | undefined)[]> {
+    return await Promise.all(
+      mints.map((mint) => this.cacheManager.get<TokenMetadata>(mint)),
+    );
   }
 
   private async cacheMetadata(metadata: TokenMetadata[]): Promise<void> {
-    const cacheOps = metadata.map((token) =>
-      this.cacheManager.set(token.mint, token, this.CACHE_TTL),
+    await Promise.all(
+      metadata.map((token) =>
+        this.cacheManager.set(token.mint, token, this.CACHE_TTL),
+      ),
     );
-    await Promise.all(cacheOps);
   }
 
-  private async fetchMetadataBatch(mints: string[]): Promise<TokenMetadata[]> {
+  private async fetchMetadataBatchWithRetries(
+    mints: string[],
+    retries = this.MAX_RETRIES,
+  ): Promise<TokenMetadata[]> {
     try {
-      const publicKeyMints = mints.map((mint) => new PublicKey(mint));
-      const metadata = await this.metaplex
-        .nfts()
-        .findAllByMintList({ mints: publicKeyMints });
-
-      if (metadata.length === 0) {
-        this.logger.warn('No metadata entries fetched. Verify mint addresses.');
-      }
-
-      const metadatas = metadata.filter((meta) => meta?.model === 'metadata');
-      const tokensWithMetadata = await this.loadAdditionalMetadata(metadatas);
-
-      return tokensWithMetadata;
+      return await this.fetchMetadataBatch(mints);
     } catch (error) {
-      this.logger.error(
-        `Failed to fetch metadata for batch: ${mints.join(', ')}`,
-        error.stack,
-      );
-      throw error;
+      if (retries > 0) {
+        const retryAfter = error.response?.headers?.get('Retry-After');
+        const delayTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : 500;
+        this.logger.warn(
+          `Retrying fetch for mints: ${mints.join(', ')} - Retries left: ${retries}`,
+        );
+        await this.delay(delayTime);
+        return this.fetchMetadataBatchWithRetries(mints, retries - 1);
+      } else {
+        this.logger.error(
+          `Failed to fetch metadata after retries for mints: ${mints.join(', ')}`,
+          error.stack,
+        );
+        throw error;
+      }
     }
   }
 
+  private async fetchMetadataBatch(mints: string[]): Promise<TokenMetadata[]> {
+    const publicKeyMints = mints.map((mint) => new PublicKey(mint));
+    const metadatas = await this.metaplex
+      .nfts()
+      .findAllByMintList({ mints: publicKeyMints });
+
+    if (!metadatas.length) {
+      this.logger.warn('No metadata entries fetched. Verify mint addresses.');
+    }
+
+    return await this.loadAdditionalMetadata(metadatas);
+  }
+
   private async loadAdditionalMetadata(
-    metadatas: Metadata[],
+    metadatas: (Metadata | Nft | Sft | null)[],
   ): Promise<TokenMetadata[]> {
-    const tokensWithMetadata: TokenMetadata[] = [];
+    return (
+      await Promise.all(
+        metadatas.map((meta) => this.loadMetadataWithRetries(meta)),
+      )
+    ).filter(Boolean) as TokenMetadata[];
+  }
 
-    const metadataBatches = chunk(metadatas, this.BATCH_SIZE);
-    const loadMetadataPromises = metadataBatches.map((batch) =>
-      Promise.all(
-        batch.map(async (meta) => {
-          try {
-            const tokenWithMetadata = (await this.metaplex
-              .nfts()
-              .load({ metadata: meta as Metadata })) as unknown as Metadata;
+  private async loadMetadataWithRetries(
+    meta: Metadata | Nft | Sft | null,
+    retries = this.MAX_RETRIES,
+  ): Promise<TokenMetadata | null> {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        return await this.loadMetadata(meta);
+      } catch (error) {
+        if (attempt < retries) {
+          this.logger.warn(
+            `Retrying load for metadata: ${meta?.address.toBase58()} - Attempt ${attempt}`,
+          );
+          await this.delay(500);
+        } else {
+          this.logger.error(
+            `Failed to load metadata after retries: ${meta?.address.toBase58()}`,
+            error.stack,
+          );
+          return null;
+        }
+      }
+    }
+    return null;
+  }
 
-            return {
-              mint: tokenWithMetadata.address.toBase58(),
-              name:
-                tokenWithMetadata?.json?.name ?? tokenWithMetadata.name ?? '',
-              symbol:
-                tokenWithMetadata?.json?.symbol ??
-                tokenWithMetadata.symbol ??
-                '',
-              image: tokenWithMetadata?.json?.image ?? null,
-            };
-          } catch (loadError) {
-            this.logger.error(
-              `Failed to load additional data for metadata: ${meta?.mintAddress}`,
-              loadError.stack,
-            );
-            return null;
-          }
-        }),
-      ).then((results) =>
-        tokensWithMetadata.push(...results.filter((token) => token !== null)),
-      ),
+  private async loadMetadata(
+    meta: Metadata | Nft | Sft | null,
+  ): Promise<TokenMetadata | null> {
+    if (!meta) return null;
+
+    try {
+      if (meta.model === 'metadata') {
+        const tokenWithMetadata = await this.metaplex
+          .nfts()
+          .load({ metadata: meta });
+        return {
+          mint: tokenWithMetadata.address.toBase58(),
+          name: tokenWithMetadata.json?.name ?? tokenWithMetadata.name ?? '',
+          symbol:
+            tokenWithMetadata.json?.symbol ?? tokenWithMetadata.symbol ?? '',
+          image: tokenWithMetadata.json?.image ?? null,
+        };
+      } else if (meta.model === 'nft' || meta.model === 'sft') {
+        return {
+          mint: meta.address.toBase58(),
+          name: meta.name,
+          symbol: meta.symbol,
+          image: meta.json?.image ?? null,
+        };
+      }
+      return null;
+    } catch (loadError) {
+      this.logger.error(
+        `Failed to load additional data for metadata: ${meta?.address.toBase58()}`,
+        loadError.stack,
+      );
+      throw loadError; // Re-throw the error to be caught by retry logic
+    }
+  }
+
+  private async consumeToken() {
+    while (this.tokens <= 0) {
+      this.refillTokens();
+      await this.delay(this.calculateDelay());
+    }
+    this.tokens -= 1;
+  }
+
+  private refillTokens() {
+    const now = Date.now();
+    const elapsed = now - this.lastRefill;
+    if (elapsed > this.TOKEN_BUCKET_INTERVAL) {
+      this.tokens = this.MAX_REQUESTS;
+      this.lastRefill = now;
+    }
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private calculateDelay(): number {
+    return Math.max(
+      0,
+      Math.ceil(this.TOKEN_BUCKET_INTERVAL / this.MAX_REQUESTS),
     );
-
-    await Promise.all(loadMetadataPromises);
-
-    return tokensWithMetadata;
   }
 }

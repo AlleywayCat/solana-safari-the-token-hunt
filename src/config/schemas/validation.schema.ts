@@ -10,6 +10,6 @@ export const validationSchema = Joi.object({
   COINGECKO_COINS_LIST_ENDPOINT: Joi.string()
     .default('/coins/list')
     .description('CoinGecko Coins List Endpoint'),
-  THROTTLER_TTL: Joi.number().required().description('Throttler TTL'),
-  THROTTLER_LIMIT: Joi.number().required().description('Throttler Limit'),
+  THROTTLER_TTL: Joi.number().default(60000).description('Throttler TTL'),
+  THROTTLER_LIMIT: Joi.number().default(10).description('Throttler Limit'),
 });
