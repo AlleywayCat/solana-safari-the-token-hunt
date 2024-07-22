@@ -15,76 +15,64 @@ export class TokenService {
   ) {}
 
   async getTokens(publicKey: string): Promise<TokenResponseDto> {
-    try {
-      const [balanceResult, tokenAccountsResult] = await Promise.all([
-        this.solanaService.getSolBalance(publicKey),
-        this.solanaService.getTokenAccountsByOwner(publicKey),
-      ]);
+    const [balanceResult, tokenAccountsResult] = await Promise.all([
+      this.solanaService.getSolBalance(publicKey),
+      this.solanaService.getTokenAccountsByOwner(publicKey),
+    ]);
 
-      if (tokenAccountsResult.length === 0) {
-        return { tokens: [], totalValue: '0.00' };
-      }
+    const mints = tokenAccountsResult.map((account) => account.mintAddress);
+    const tokenMetadata = await this.metaplexService.getTokenMetadata(mints);
 
-      const mintAddresses = tokenAccountsResult.map(
-        (account) => account.mintAddress,
-      );
+    const tokenSymbols = tokenMetadata
+      .map((metadata) => metadata.symbol.toLowerCase())
+      .filter((symbol) => symbol); // Filter out empty or invalid symbols
 
-      const tokenMetadata =
-        await this.metaplexService.getTokenMetadata(mintAddresses);
+    if (tokenSymbols.length === 0) {
+      return {
+        tokens: [],
+        totalValue: '0.00',
+      };
+    }
 
-      const tokenSymbols = tokenMetadata
-        .map((metadata) => metadata.symbol.toLowerCase())
-        .filter((symbol) => symbol);
+    const tokenPrices =
+      await this.coinGeckoService.getTokenPrices(tokenSymbols);
 
-      if (tokenSymbols.length === 0) {
-        return {
-          tokens: [],
-          totalValue: '0.00',
-        };
-      }
+    const tokens = tokenMetadata.map((metadata) => {
+      const symbolLowerCase = metadata.symbol.toLowerCase();
+      const price = tokenPrices[symbolLowerCase]?.usd || 0;
 
-      const tokenPrices = await this.coinGeckoService.fetchPrices(tokenSymbols);
-
-      const tokens = tokenMetadata.map((metadata) => {
-        const symbolLowerCase = metadata.symbol.toLowerCase();
-        const price = tokenPrices[symbolLowerCase]?.usd || 0;
-
-        if (price === 0) {
-          this.logger.warn(
-            `Price for ${metadata.symbol} not found or is 0. This might be due to missing mapping or unsupported token.`,
-          );
-        }
-
-        const account = tokenAccountsResult.find(
-          (account) => account.mintAddress === metadata.mint,
+      if (price === 0) {
+        this.logger.warn(
+          `Price for ${metadata.symbol} not found or is 0. This might be due to missing mapping or unsupported token.`,
         );
+      }
 
-        const adjustedBalance =
-          parseFloat(account.amount) / Math.pow(10, account.decimals);
-
-        return {
-          mintAddress: metadata.mint,
-          name: metadata.name,
-          symbol: metadata.symbol,
-          imageUrl: metadata.image,
-          decimals: account.decimals,
-          balance: adjustedBalance.toFixed(account.decimals),
-          price,
-        };
-      });
-
-      const totalValue = tokens.reduce(
-        (acc, token) => acc + parseFloat(token.balance) * token.price,
-        0,
+      const account = tokenAccountsResult.find(
+        (account) => account.mintAddress === metadata.mint,
       );
+
+      const adjustedBalance =
+        parseFloat(account.amount) / Math.pow(10, account.decimals);
 
       return {
-        tokens,
-        totalValue: totalValue.toFixed(2),
+        mintAddress: metadata.mint,
+        name: metadata.name,
+        symbol: metadata.symbol,
+        imageUrl: metadata.image,
+        decimals: account.decimals,
+        balance: adjustedBalance.toFixed(account.decimals),
+        price,
       };
-    } catch (error) {
-      this.logger.error('Failed to fetch tokens', error.stack);
-      throw new Error('Failed to fetch tokens');
-    }
+    });
+
+    const totalValue = tokens.reduce(
+      (acc, token) => acc + parseFloat(token.balance) * token.price,
+      0,
+    );
+
+    return {
+      tokens,
+      totalValue: totalValue.toFixed(2),
+    };
   }
 }

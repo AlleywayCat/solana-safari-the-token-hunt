@@ -11,6 +11,8 @@ export class CoinGeckoService {
   private readonly logger = new Logger(CoinGeckoService.name);
   private readonly apiUrl: string;
   private readonly apiKey: string;
+  private readonly priceEndpoint: string;
+  private readonly coinsListEndpoint: string;
   private readonly cacheTTL = 3600; // Cache TTL in seconds (1 hour)
   private symbolToIdMap: { [symbol: string]: string } = {};
 
@@ -21,6 +23,12 @@ export class CoinGeckoService {
   ) {
     this.apiUrl = this.configService.get<string>('COINGECKO_API_URL');
     this.apiKey = this.configService.get<string>('COINGECKO_API_KEY');
+    this.priceEndpoint = this.configService.get<string>(
+      'COINGECKO_PRICE_ENDPOINT',
+    );
+    this.coinsListEndpoint = this.configService.get<string>(
+      'COINGECKO_COINS_LIST_ENDPOINT',
+    );
   }
 
   async getTokenPrices(symbols: string[]): Promise<CoinGeckoResponse> {
@@ -47,8 +55,6 @@ export class CoinGeckoService {
         );
         return {};
       }
-
-      this.logger.debug(`Token IDs: ${tokenIds.join(', ')}`);
 
       const tokenPrices = await this.fetchPrices(tokenIds);
 
@@ -81,7 +87,7 @@ export class CoinGeckoService {
 
     try {
       const response = await firstValueFrom(
-        this.httpService.get(`${this.apiUrl}/coins/list`, {
+        this.httpService.get(`${this.apiUrl}${this.coinsListEndpoint}`, {
           headers: {
             'x-cg-pro-api-key': this.apiKey,
           },
@@ -94,10 +100,6 @@ export class CoinGeckoService {
         acc[coin.symbol.toLowerCase()] = coin.id;
         return acc;
       }, {});
-
-      this.logger.debug(
-        `Symbol to ID map created: ${JSON.stringify(this.symbolToIdMap)}`,
-      );
 
       await this.cacheManager.set(cacheKey, this.symbolToIdMap, this.cacheTTL);
     } catch (error) {
@@ -113,7 +115,7 @@ export class CoinGeckoService {
     const idsStr = ids.join(',');
     try {
       const response = await firstValueFrom(
-        this.httpService.get(`${this.apiUrl}/simple/price`, {
+        this.httpService.get(`${this.apiUrl}${this.priceEndpoint}`, {
           params: {
             ids: idsStr,
             vs_currencies: 'usd',

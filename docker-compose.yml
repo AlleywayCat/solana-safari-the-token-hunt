@@ -1,12 +1,4 @@
 services:
-  solana-safari-redis:
-    image: 'redis:latest'
-    container_name: 'solana-safari-redis'
-    ports:
-      - '6379:6379'
-    networks:
-      - solana-safari-network
-
   solana-safari-app:
     build:
       context: .
@@ -14,8 +6,6 @@ services:
     container_name: 'solana-safari-app'
     ports:
       - '3000:3000'
-    depends_on:
-      - solana-safari-redis
     networks:
       - solana-safari-network
     env_file:
