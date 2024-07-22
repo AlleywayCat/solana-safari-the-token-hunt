@@ -1,0 +1,16 @@
+services:
+  solana-safari-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: 'solana-safari-app'
+    ports:
+      - '3000:3000'
+    networks:
+      - solana-safari-network
+    env_file:
+      - .env
+
+networks:
+  solana-safari-network:
+    driver: bridge
