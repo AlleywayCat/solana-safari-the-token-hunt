@@ -4,8 +4,6 @@ import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue, QueueEvents } from 'bullmq';
 import { CoinGeckoResponse } from './interfaces/coingecko-response.interface';
 
 @Injectable()
@@ -15,17 +13,14 @@ export class CoinGeckoService {
   private readonly apiKey: string;
   private readonly cacheTTL = 3600; // Cache TTL in seconds (1 hour)
   private symbolToIdMap: { [symbol: string]: string } = {};
-  private readonly queueEvents: QueueEvents;
 
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
-    @InjectQueue('coingeckoQueue') private readonly coingeckoQueue: Queue,
   ) {
     this.apiUrl = this.configService.get<string>('COINGECKO_API_URL');
     this.apiKey = this.configService.get<string>('COINGECKO_API_KEY');
-    this.queueEvents = new QueueEvents('coingeckoQueue');
   }
 
   async getTokenPrices(symbols: string[]): Promise<CoinGeckoResponse> {
@@ -55,9 +50,7 @@ export class CoinGeckoService {
 
       this.logger.debug(`Token IDs: ${tokenIds.join(', ')}`);
 
-      const job = await this.coingeckoQueue.add('fetch-prices', { tokenIds });
-
-      const tokenPrices = await job.waitUntilFinished(this.queueEvents);
+      const tokenPrices = await this.fetchPrices(tokenIds);
 
       if (!tokenPrices) {
         throw new Error('Invalid tokenIds data');

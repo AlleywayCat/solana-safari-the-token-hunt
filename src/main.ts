@@ -1,7 +1,7 @@
 import helmet from 'helmet';
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app/app.module';
-import { LoggingInterceptor } from './app/shared/logging/logging.interceptor';
+import { AppModule } from './app.module';
+import { LoggingInterceptor } from './shared/logging/logging.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
