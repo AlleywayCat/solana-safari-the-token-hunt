@@ -129,7 +129,7 @@ export class MetaplexService {
       .nfts()
       .findAllByMintList({ mints: publicKeyMints });
 
-    if (!metadatas.length) {
+    if (!metadatas?.length) {
       this.logger.warn('No metadata entries fetched. Verify mint addresses.');
     }
 
@@ -141,7 +141,7 @@ export class MetaplexService {
   ): Promise<TokenMetadata[]> {
     return (
       await Promise.all(
-        metadatas.map((meta) => this.loadMetadataWithRetries(meta)),
+        metadatas?.map((meta) => this.loadMetadataWithRetries(meta)),
       )
     ).filter(Boolean) as TokenMetadata[];
   }

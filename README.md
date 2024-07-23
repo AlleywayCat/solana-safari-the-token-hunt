@@ -18,6 +18,7 @@ Solana Safari - The Token Hunt is an innovative project designed to explore the 
 - **Token Hunting**: Discover and collect various tokens within the Solana ecosystem.
 - **Integration with CoinGecko**: Utilize real-time data from CoinGecko for accurate token information.
 - **Caching Mechanism**: Efficient data retrieval with caching strategies to enhance performance.
+- **Rate Limiting**: Considers rate limiting by implementing a token bucket algorithm to manage the number of requests per minute, which is important to comply with CoinGecko's API rate limits.
 - **Metaplex Integration**: Seamlessly interact with the Metaplex protocol for token management.
 
 ## Getting Started
@@ -125,4 +126,4 @@ The tests include:
 
 ## License
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for details.
