@@ -10,7 +10,7 @@ import { SolanaRpcError } from './errors/solana-error';
 @Injectable()
 export class SolanaService {
   private readonly logger = new Logger(SolanaService.name);
-  private readonly CACHE_TTL = 3600; // Cache TTL in seconds (e.g., 1 hour)
+  private readonly CACHE_TTL = 3600; // Cache TTL in seconds (1 hour)
 
   constructor(
     @Inject(SOLANA_CONNECTION) private readonly connection: Connection,
@@ -29,9 +29,10 @@ export class SolanaService {
       return solBalance;
     } catch (error) {
       this.logger.error(
-        `Failed to get SOL balance for ${publicKey}`,
+        `Failed to get SOL balance for ${publicKey}: ${error.message}`,
         error.stack,
       );
+
       throw new SolanaRpcError(error.message, publicKey);
     }
   }
@@ -39,6 +40,7 @@ export class SolanaService {
   private async getCachedData<T>(cacheKey: string): Promise<T | null> {
     try {
       const cachedData = await this.cacheManager.get<T>(cacheKey);
+
       if (cachedData) {
         this.logger.log(`Cache hit for ${cacheKey}`);
         return cachedData;
@@ -64,6 +66,7 @@ export class SolanaService {
     const cacheKey = `tokenAccounts-${publicKey}`;
     const cachedAccounts =
       await this.getCachedData<ParsedTokenAccount[]>(cacheKey);
+
     if (cachedAccounts !== null) {
       return cachedAccounts;
     }
@@ -72,13 +75,12 @@ export class SolanaService {
       const pubKey = new PublicKey(publicKey);
       const tokenAccounts = await this.connection.getParsedTokenAccountsByOwner(
         pubKey,
-        {
-          programId: TOKEN_PROGRAM_ID,
-        },
+        { programId: TOKEN_PROGRAM_ID },
       );
 
       const parsedAccounts = tokenAccounts.value.map((account) => {
         const info = account.account.data.parsed.info;
+
         return {
           mintAddress: info.mint,
           amount: info.tokenAmount.amount,
@@ -87,14 +89,15 @@ export class SolanaService {
       });
 
       await this.setCachedData(cacheKey, parsedAccounts);
-
       this.logger.log(
         `Fetched ${parsedAccounts.length} token accounts for ${publicKey}`,
       );
+
       return parsedAccounts;
     } catch (error) {
       this.logger.error(
         `Failed to get token accounts for ${publicKey}: ${error.message}`,
+        error.stack,
       );
       throw new SolanaRpcError(error.message, publicKey);
     }

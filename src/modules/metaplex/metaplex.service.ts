@@ -11,8 +11,8 @@ export class MetaplexService {
   private readonly logger = new Logger(MetaplexService.name);
   private readonly BATCH_SIZE = 10;
   private readonly CACHE_TTL = 3600;
-  private readonly MAX_REQUESTS = 200;
-  private readonly TOKEN_BUCKET_INTERVAL = 60000;
+  private readonly MAX_REQUESTS = 120; // 120 requests per minute
+  private readonly TOKEN_BUCKET_INTERVAL = 60000; // 60 seconds
   private readonly MAX_RETRIES = 3;
 
   private tokens = this.MAX_REQUESTS;
@@ -30,8 +30,8 @@ export class MetaplexService {
     try {
       const mintBatches = chunk(mints, this.BATCH_SIZE);
       const tokensWithMetadata = await this.processInParallel(mintBatches);
-
       const flattenedTokens = tokensWithMetadata.flat();
+
       this.logger.log(
         `Successfully fetched metadata for ${flattenedTokens.length} mints in ${Date.now() - start} ms`,
       );
@@ -57,6 +57,7 @@ export class MetaplexService {
         return this.getMetadataForBatch(batch);
       }),
     );
+
     return result;
   }
 
@@ -108,7 +109,9 @@ export class MetaplexService {
         this.logger.warn(
           `Retrying fetch for mints: ${mints.join(', ')} - Retries left: ${retries}`,
         );
+
         await this.delay(delayTime);
+
         return this.fetchMetadataBatchWithRetries(mints, retries - 1);
       } else {
         this.logger.error(
@@ -155,16 +158,19 @@ export class MetaplexService {
           this.logger.warn(
             `Retrying load for metadata: ${meta?.address.toBase58()} - Attempt ${attempt}`,
           );
+
           await this.delay(500);
         } else {
           this.logger.error(
             `Failed to load metadata after retries: ${meta?.address.toBase58()}`,
             error.stack,
           );
+
           return null;
         }
       }
     }
+
     return null;
   }
 
@@ -178,6 +184,7 @@ export class MetaplexService {
         const tokenWithMetadata = await this.metaplex
           .nfts()
           .load({ metadata: meta });
+
         return {
           mint: tokenWithMetadata.address.toBase58(),
           name: tokenWithMetadata.json?.name ?? tokenWithMetadata.name ?? '',
@@ -193,13 +200,15 @@ export class MetaplexService {
           image: meta.json?.image ?? null,
         };
       }
+
       return null;
     } catch (loadError) {
       this.logger.error(
         `Failed to load additional data for metadata: ${meta?.address.toBase58()}`,
         loadError.stack,
       );
-      throw loadError; // Re-throw the error to be caught by retry logic
+
+      throw loadError;
     }
   }
 
@@ -214,6 +223,7 @@ export class MetaplexService {
   private refillTokens() {
     const now = Date.now();
     const elapsed = now - this.lastRefill;
+
     if (elapsed > this.TOKEN_BUCKET_INTERVAL) {
       this.tokens = this.MAX_REQUESTS;
       this.lastRefill = now;

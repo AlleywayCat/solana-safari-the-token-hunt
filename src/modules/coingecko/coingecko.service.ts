@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { CoinGeckoResponse } from './interfaces/coingecko-response.interface';
+import { chunk } from 'lodash';
 
 @Injectable()
 export class CoinGeckoService {
@@ -122,7 +123,7 @@ export class CoinGeckoService {
   private async fetchPricesInBatches(
     ids: string[],
   ): Promise<CoinGeckoResponse> {
-    const batchedIds = this.chunkArray(ids, this.BATCH_SIZE);
+    const batchedIds = chunk(ids, this.BATCH_SIZE);
     const results = await Promise.all(
       batchedIds.map((batch) => this.fetchPricesWithRetries(batch)),
     );
@@ -138,6 +139,7 @@ export class CoinGeckoService {
     } catch (error) {
       if (retries > 0) {
         const retryAfterHeader = error.response?.headers?.get('Retry-After');
+
         if (retryAfterHeader) {
           this.retryAfter = parseInt(retryAfterHeader, 10) * 1000;
           this.logger.warn(
@@ -149,11 +151,14 @@ export class CoinGeckoService {
         this.logger.warn(
           `Retrying fetch for ids: ${ids.join(', ')} - Retries left: ${retries}`,
         );
+
         await this.delay(500); // Adding a delay before retry
+
         return this.fetchPricesWithRetries(ids, retries - 1);
       } else {
         this.logger.error(
           `Failed to fetch prices after retries for ids: ${ids.join(', ')}`,
+          error.stack,
         );
         throw error;
       }
@@ -162,17 +167,14 @@ export class CoinGeckoService {
 
   private async fetchPrices(ids: string[]): Promise<CoinGeckoResponse> {
     const idsStr = ids.join(',');
+
     await this.consumeToken();
+
     try {
       const response = await firstValueFrom(
         this.httpService.get(`${this.apiUrl}${this.priceEndpoint}`, {
-          params: {
-            ids: idsStr,
-            vs_currencies: 'usd',
-          },
-          headers: {
-            'x-cg-pro-api-key': this.apiKey,
-          },
+          params: { ids: idsStr, vs_currencies: 'usd' },
+          headers: { 'x-cg-pro-api-key': this.apiKey },
         }),
       );
 
@@ -197,6 +199,7 @@ export class CoinGeckoService {
   private refillTokens() {
     const now = Date.now();
     const elapsed = now - this.lastRefill;
+
     if (elapsed > this.TOKEN_BUCKET_INTERVAL) {
       this.tokens = this.MAX_REQUESTS;
       this.lastRefill = now;
@@ -205,11 +208,5 @@ export class CoinGeckoService {
 
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  private chunkArray<T>(array: T[], size: number): T[][] {
-    return Array.from({ length: Math.ceil(array.length / size) }, (v, i) =>
-      array.slice(i * size, i * size + size),
-    );
   }
 }
