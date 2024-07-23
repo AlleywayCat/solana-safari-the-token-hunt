@@ -16,7 +16,7 @@ Solana Safari - The Token Hunt is an innovative project designed to explore the 
 ## Features
 
 - **Token Hunting**: Discover and collect various tokens within the Solana ecosystem.
-- **Integration with CoinGecko**: Utilize real-time data from CoinGecko for accurate token information.
+- **Integration with CoinGecko**: Utilize real-time data from CoinGecko for accurate token information (prices and coin listings in our case).
 - **Caching Mechanism**: Efficient data retrieval with caching strategies to enhance performance.
 - **Rate Limiting**: Considers rate limiting by implementing a token bucket algorithm to manage the number of requests per minute, which is important to comply with CoinGecko's API rate limits.
 - **Metaplex Integration**: Seamlessly interact with the Metaplex protocol for token management.
@@ -57,7 +57,6 @@ To get started with Solana Safari - The Token Hunt, follow these steps:
    Ensure you have the following environment variables set in your `.env` file:
 
    - `SOLANA_RPC_URL`: Your Solana RPC URL.
-   - `COINGECKO_API_URL`: Your CoinGecko API URL.
    - `COINGECKO_API_KEY`: Your CoinGecko API key.
 
 4. Start the application:
@@ -111,12 +110,28 @@ GET /tokens?publicKey=ETddVJxVaLWcFfRT3TCoPty4mqrY9s32KPMZ8KFfgFg
 }
 ```
 
+---
+
+**NOTE**
+
+You can utilize the [Postman collection](./Solana%20Safari.postman_collection.json) provided in the root directory to test the API endpoint.
+
+- Import the collection into Postman.
+
+---
+
 ## Running Tests
 
-To run the tests for the application, use the following command:
+To run the unit tests for the application, use the following command:
 
 ```sh
 npm test
+```
+
+To run the end-to-end tests for the application, use the following command:
+
+```sh
+npm run test:e2e
 ```
 
 The tests include:
