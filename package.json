@@ -88,7 +88,9 @@
       "!**/constants/**",
       "!**/entities/**",
       "!**/interfaces/**",
-      "!**/dto/**"
+      "!**/dto/**",
+      "!**/errors/**",
+      "!**/logging/**"
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
